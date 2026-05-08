@@ -15,6 +15,11 @@ if ! command -v make >/dev/null 2>&1; then
     exit 1
 fi
 
+if ! command -v go >/dev/null 2>&1; then
+    echo "Error: 'go' is required."
+    exit 1
+fi
+
 if ! command -v docker >/dev/null 2>&1; then
     echo "Error: 'docker' is required."
     exit 1
@@ -26,20 +31,42 @@ IMAGE_TAG="${IMAGE_TAG:-arm64}"
 VARIANT="${VARIANT:-busybox}"
 PUSH="${PUSH:-false}"
 BUILDER_NAME="${BUILDER_NAME:-node-exporter-arm64-builder}"
+GOPROXY_VALUE="${GOPROXY:-https://goproxy.cn,direct}"
+MOD_DOWNLOAD_RETRIES="${MOD_DOWNLOAD_RETRIES:-3}"
 
 usage() {
     cat <<'EOF'
 Usage:
-  ./build_arm64_image.sh [--repo <repo>] [--name <name>] [--tag <tag>] [--variant busybox|distroless] [--push]
+    ./build_arm64_image.sh [--repo <repo>] [--name <name>] [--tag <tag>] [--variant busybox|distroless] [--goproxy <url>] [--push]
 
 Examples:
   ./build_arm64_image.sh
   ./build_arm64_image.sh --repo yourrepo --name node-exporter-nfs --tag v1.0.0
+    ./build_arm64_image.sh --goproxy https://goproxy.cn,direct
   ./build_arm64_image.sh --variant distroless --push --repo yourrepo --name node-exporter-nfs --tag v1.0.0
 
 Environment variable equivalents:
-  IMAGE_REPO, IMAGE_NAME, IMAGE_TAG, VARIANT, PUSH, BUILDER_NAME
+    IMAGE_REPO, IMAGE_NAME, IMAGE_TAG, VARIANT, PUSH, BUILDER_NAME, GOPROXY, MOD_DOWNLOAD_RETRIES
 EOF
+}
+
+download_go_modules() {
+        local attempt
+
+        for ((attempt = 1; attempt <= MOD_DOWNLOAD_RETRIES; attempt++)); do
+                if GOPROXY="${GOPROXY_VALUE}" GO111MODULE=on go mod download; then
+                        return 0
+                fi
+
+                if (( attempt < MOD_DOWNLOAD_RETRIES )); then
+                        echo "go mod download failed on attempt ${attempt}/${MOD_DOWNLOAD_RETRIES}, retrying..."
+                fi
+        done
+
+        echo "Error: failed to download Go modules after ${MOD_DOWNLOAD_RETRIES} attempts."
+        echo "Hint: rerun with a reachable mirror, for example:"
+        echo "  GOPROXY=https://goproxy.cn,direct ./build_arm64_image.sh"
+        exit 1
 }
 
 while [[ $# -gt 0 ]]; do
@@ -58,6 +85,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --variant)
             VARIANT="$2"
+            shift 2
+            ;;
+        --goproxy)
+            GOPROXY_VALUE="$2"
             shift 2
             ;;
         --push)
@@ -94,8 +125,12 @@ fi
 
 docker buildx inspect --bootstrap >/dev/null
 
+echo "==> Using GOPROXY ${GOPROXY_VALUE}"
+echo "==> Downloading Go modules"
+download_go_modules
+
 echo "==> Building linux/arm64 binary"
-make build GOOS=linux GOARCH=arm64
+GOPROXY="${GOPROXY_VALUE}" GO111MODULE=on make build GOOS=linux GOARCH=arm64
 
 DOCKERFILE="Dockerfile"
 SUFFIX=""

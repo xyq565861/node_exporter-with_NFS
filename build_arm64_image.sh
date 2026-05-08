@@ -33,20 +33,22 @@ PUSH="${PUSH:-false}"
 BUILDER_NAME="${BUILDER_NAME:-node-exporter-arm64-builder}"
 GOPROXY_VALUE="${GOPROXY:-https://goproxy.cn,direct}"
 MOD_DOWNLOAD_RETRIES="${MOD_DOWNLOAD_RETRIES:-3}"
+DISTROLESS_BASE_IMAGE="${DISTROLESS_BASE_IMAGE:-gcr.io/distroless/static-debian13}"
 
 usage() {
     cat <<'EOF'
 Usage:
-    ./build_arm64_image.sh [--repo <repo>] [--name <name>] [--tag <tag>] [--variant busybox|distroless] [--goproxy <url>] [--push]
+    ./build_arm64_image.sh [--repo <repo>] [--name <name>] [--tag <tag>] [--variant busybox|distroless] [--goproxy <url>] [--distroless-base <image>] [--push]
 
 Examples:
   ./build_arm64_image.sh
   ./build_arm64_image.sh --repo yourrepo --name node-exporter-nfs --tag v1.0.0
     ./build_arm64_image.sh --goproxy https://goproxy.cn,direct
+    ./build_arm64_image.sh --variant distroless --distroless-base gcr.m.daocloud.io/distroless/static-debian13
   ./build_arm64_image.sh --variant distroless --push --repo yourrepo --name node-exporter-nfs --tag v1.0.0
 
 Environment variable equivalents:
-    IMAGE_REPO, IMAGE_NAME, IMAGE_TAG, VARIANT, PUSH, BUILDER_NAME, GOPROXY, MOD_DOWNLOAD_RETRIES
+    IMAGE_REPO, IMAGE_NAME, IMAGE_TAG, VARIANT, PUSH, BUILDER_NAME, GOPROXY, MOD_DOWNLOAD_RETRIES, DISTROLESS_BASE_IMAGE
 EOF
 }
 
@@ -89,6 +91,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --goproxy)
             GOPROXY_VALUE="$2"
+            shift 2
+            ;;
+        --distroless-base)
+            DISTROLESS_BASE_IMAGE="$2"
             shift 2
             ;;
         --push)
@@ -142,7 +148,10 @@ BUILD_ARGS=(
 if [[ "${VARIANT}" == "distroless" ]]; then
     DOCKERFILE="Dockerfile.distroless"
     SUFFIX="-distroless"
-    BUILD_ARGS+=(--build-arg "DISTROLESS_ARCH=arm64")
+    BUILD_ARGS+=(
+        --build-arg "DISTROLESS_ARCH=arm64"
+        --build-arg "DISTROLESS_BASE_IMAGE=${DISTROLESS_BASE_IMAGE}"
+    )
 fi
 
 IMAGE_REF="${IMAGE_REPO}/${IMAGE_NAME}:${IMAGE_TAG}${SUFFIX}"

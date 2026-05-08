@@ -1,7 +1,8 @@
+ARG DISTROLESS_BASE_IMAGE="gcr.io/distroless/static-debian13"
 ARG DISTROLESS_ARCH="amd64"
 
 # Use DISTROLESS_ARCH for base image selection (handles armv7->arm mapping).
-FROM gcr.io/distroless/static-debian13:nonroot-${DISTROLESS_ARCH}
+FROM ${DISTROLESS_BASE_IMAGE}:nonroot-${DISTROLESS_ARCH}
 # Base image sets USER to 65532:65532 (nonroot user).
 
 ARG ARCH="amd64"

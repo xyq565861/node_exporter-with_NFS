@@ -34,6 +34,9 @@ BUILDER_NAME="${BUILDER_NAME:-node-exporter-arm64-builder}"
 GOPROXY_VALUE="${GOPROXY:-https://goproxy.cn,direct}"
 MOD_DOWNLOAD_RETRIES="${MOD_DOWNLOAD_RETRIES:-3}"
 DISTROLESS_BASE_IMAGE="${DISTROLESS_BASE_IMAGE:-gcr.io/distroless/static-debian13}"
+OUTPUT_DIR="${SCRIPT_DIR}/.build/linux-arm64"
+ROOT_BINARY="${SCRIPT_DIR}/node_exporter"
+OUTPUT_BINARY="${OUTPUT_DIR}/node_exporter"
 
 usage() {
     cat <<'EOF'
@@ -70,6 +73,21 @@ download_go_modules() {
         echo "  GOPROXY=https://goproxy.cn,direct ./build_arm64_image.sh"
         exit 1
 }
+
+    stage_arm64_binary() {
+        if [[ -f "${ROOT_BINARY}" ]]; then
+            mkdir -p "${OUTPUT_DIR}"
+            install -m 0755 "${ROOT_BINARY}" "${OUTPUT_BINARY}"
+            return 0
+        fi
+
+        if [[ -f "${OUTPUT_BINARY}" ]]; then
+            return 0
+        fi
+
+        echo "Error: built binary not found in either ${ROOT_BINARY} or ${OUTPUT_BINARY}."
+        exit 1
+    }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -137,6 +155,9 @@ download_go_modules
 
 echo "==> Building linux/arm64 binary"
 GOPROXY="${GOPROXY_VALUE}" GO111MODULE=on make build GOOS=linux GOARCH=arm64
+
+echo "==> Staging binary for Docker build context"
+stage_arm64_binary
 
 DOCKERFILE="Dockerfile"
 SUFFIX=""

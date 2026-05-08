@@ -1,0 +1,58 @@
+version: "3.8"
+
+services:
+  node_exporter:
+    image: ${NODE_EXPORTER_IMAGE:-local/node-exporter-nfs:arm64}
+    container_name: node-exporter
+    restart: unless-stopped
+
+    # Host namespaces are required, otherwise many metrics only describe the container.
+    network_mode: host
+    pid: host
+    uts: host
+
+    # Run as root for broader access to host proc/sys/udev and optional collectors.
+    user: "0:0"
+
+    command:
+      - --web.listen-address=:9100
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/host/root
+      - --path.udev.data=/host/run/udev/data
+
+      # Enable richer network and NFS visibility when running in a container.
+      - --collector.ethtool
+      - --collector.mountstats
+
+      # Trim noisy container mount points while still exposing real host filesystems.
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run/credentials/.+|var/lib/docker/.+|var/lib/containers/storage/.+|var/lib/kubelet/.+)($|/)
+
+      # Optional: reduce ethtool cardinality on hosts with many virtual NICs.
+      # - --collector.ethtool.device-exclude=^(lo|docker.*|veth.*|cali.*|flannel.*|cni.*|br-.*|virbr.*|vnet.*)$
+
+      # Optional: enable host service/session metrics after mounting the dbus socket below.
+      # - --collector.systemd
+      # - --collector.logind
+
+    volumes:
+      # procfs and sysfs need explicit host mappings so collectors see host state, not container state.
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+
+      # Bind the whole host rootfs for filesystem, os-release and other path-based collectors.
+      - /:/host/root:ro,rslave
+
+      # udev data improves disk and device metadata enrichment.
+      - /run/udev/data:/host/run/udev/data:ro
+
+      # Optional: uncomment when enabling systemd/logind collectors.
+      # - /run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket:ro
+
+    # Optional: uncomment if your host reports permission errors for timex collector.
+    # cap_add:
+    #   - SYS_TIME
+
+    # Optional: some NIC drivers need extra privileges for detailed ethtool stats.
+    # cap_add:
+    #   - NET_ADMIN

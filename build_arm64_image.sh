@@ -27,31 +27,34 @@ fi
 
 IMAGE_REPO="${IMAGE_REPO:-local}"
 IMAGE_NAME="${IMAGE_NAME:-node-exporter-nfs}"
-IMAGE_TAG="${IMAGE_TAG:-arm64}"
+IMAGE_TAG="${IMAGE_TAG:-}"
 VARIANT="${VARIANT:-busybox}"
 PUSH="${PUSH:-false}"
-BUILDER_NAME="${BUILDER_NAME:-node-exporter-arm64-builder}"
+TARGET_ARCH="${TARGET_ARCH:-arm64}"
+TARGET_OS="${TARGET_OS:-linux}"
+BUILDER_NAME="${BUILDER_NAME:-node-exporter-linux-builder}"
 GOPROXY_VALUE="${GOPROXY:-https://goproxy.cn,direct}"
 MOD_DOWNLOAD_RETRIES="${MOD_DOWNLOAD_RETRIES:-3}"
 DISTROLESS_BASE_IMAGE="${DISTROLESS_BASE_IMAGE:-gcr.io/distroless/static-debian13}"
-OUTPUT_DIR="${SCRIPT_DIR}/.build/linux-arm64"
+OUTPUT_DIR=""
 ROOT_BINARY="${SCRIPT_DIR}/node_exporter"
-OUTPUT_BINARY="${OUTPUT_DIR}/node_exporter"
+OUTPUT_BINARY=""
 
 usage() {
     cat <<'EOF'
 Usage:
-    ./build_arm64_image.sh [--repo <repo>] [--name <name>] [--tag <tag>] [--variant busybox|distroless] [--goproxy <url>] [--distroless-base <image>] [--push]
+        ./build_arm64_image.sh [--arch <amd64|arm64>] [--repo <repo>] [--name <name>] [--tag <tag>] [--variant busybox|distroless] [--goproxy <url>] [--distroless-base <image>] [--push]
 
 Examples:
   ./build_arm64_image.sh
+    ./build_arm64_image.sh --arch amd64 --name node-exporter-nfs --tag v1.0.0
   ./build_arm64_image.sh --repo yourrepo --name node-exporter-nfs --tag v1.0.0
     ./build_arm64_image.sh --goproxy https://goproxy.cn,direct
     ./build_arm64_image.sh --variant distroless --distroless-base gcr.m.daocloud.io/distroless/static-debian13
   ./build_arm64_image.sh --variant distroless --push --repo yourrepo --name node-exporter-nfs --tag v1.0.0
 
 Environment variable equivalents:
-    IMAGE_REPO, IMAGE_NAME, IMAGE_TAG, VARIANT, PUSH, BUILDER_NAME, GOPROXY, MOD_DOWNLOAD_RETRIES, DISTROLESS_BASE_IMAGE
+        IMAGE_REPO, IMAGE_NAME, IMAGE_TAG, VARIANT, PUSH, TARGET_ARCH, TARGET_OS, BUILDER_NAME, GOPROXY, MOD_DOWNLOAD_RETRIES, DISTROLESS_BASE_IMAGE
 EOF
 }
 
@@ -91,6 +94,10 @@ download_go_modules() {
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+            --arch)
+                TARGET_ARCH="$2"
+                shift 2
+                ;;
         --repo)
             IMAGE_REPO="$2"
             shift 2
@@ -136,6 +143,18 @@ if [[ "${VARIANT}" != "busybox" && "${VARIANT}" != "distroless" ]]; then
     exit 1
 fi
 
+if [[ "${TARGET_ARCH}" != "amd64" && "${TARGET_ARCH}" != "arm64" ]]; then
+    echo "Error: --arch must be 'amd64' or 'arm64'."
+    exit 1
+fi
+
+if [[ -z "${IMAGE_TAG}" ]]; then
+    IMAGE_TAG="${TARGET_ARCH}"
+fi
+
+OUTPUT_DIR="${SCRIPT_DIR}/.build/${TARGET_OS}-${TARGET_ARCH}"
+OUTPUT_BINARY="${OUTPUT_DIR}/node_exporter"
+
 if ! docker buildx version >/dev/null 2>&1; then
     echo "Error: docker buildx is required."
     exit 1
@@ -153,8 +172,8 @@ echo "==> Using GOPROXY ${GOPROXY_VALUE}"
 echo "==> Downloading Go modules"
 download_go_modules
 
-echo "==> Building linux/arm64 binary"
-GOPROXY="${GOPROXY_VALUE}" GO111MODULE=on make build GOOS=linux GOARCH=arm64
+echo "==> Building ${TARGET_OS}/${TARGET_ARCH} binary"
+GOPROXY="${GOPROXY_VALUE}" GO111MODULE=on make build GOOS="${TARGET_OS}" GOARCH="${TARGET_ARCH}"
 
 echo "==> Staging binary for Docker build context"
 stage_arm64_binary
@@ -162,15 +181,15 @@ stage_arm64_binary
 DOCKERFILE="Dockerfile"
 SUFFIX=""
 BUILD_ARGS=(
-    --build-arg "ARCH=arm64"
-    --build-arg "OS=linux"
+    --build-arg "ARCH=${TARGET_ARCH}"
+    --build-arg "OS=${TARGET_OS}"
 )
 
 if [[ "${VARIANT}" == "distroless" ]]; then
     DOCKERFILE="Dockerfile.distroless"
     SUFFIX="-distroless"
     BUILD_ARGS+=(
-        --build-arg "DISTROLESS_ARCH=arm64"
+        --build-arg "DISTROLESS_ARCH=${TARGET_ARCH}"
         --build-arg "DISTROLESS_BASE_IMAGE=${DISTROLESS_BASE_IMAGE}"
     )
 fi
@@ -184,7 +203,7 @@ fi
 
 echo "==> Building image ${IMAGE_REF}"
 docker buildx build \
-    --platform linux/arm64 \
+    --platform "${TARGET_OS}/${TARGET_ARCH}" \
     -f "${DOCKERFILE}" \
     "${BUILD_ARGS[@]}" \
     -t "${IMAGE_REF}" \

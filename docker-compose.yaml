@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   node_exporter:
-    image: ${NODE_EXPORTER_IMAGE:-local/node-exporter-nfs:arm64}
+    image: ${NODE_EXPORTER_IMAGE:-local/node-exporter-nfs:v1.0.0-distroless}
     container_name: node-exporter
     restart: unless-stopped
 
